@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 #include <pthread.h>
 
 long long int N; //número de elementos
@@ -27,18 +28,29 @@ int ehPrimo(long long int n) {
 
 void* Tarefa(void *args) {
     t_Args *arg = (t_Args*) args;
-    for(int i=arg->id; i<=N; i+=arg->nthreads) {
-        pthread_mutex_lock(&mutex);
-        if(ehPrimo(iter)) { count++; }
-        iter++;
-        pthread_mutex_unlock(&mutex);
+    long long int inicio = (N * arg->id) / arg->nthreads;
+    long long int fim = (N * (arg->id+1)) / arg->nthreads;
+    int local_count = 0;
+
+    for(long long int i = inicio; i < fim; i++) {
+        if (ehPrimo(i)) local_count++;
     }
+
+    // usar mutex apenas para somar no total global
+    pthread_mutex_lock(&mutex);
+    count += local_count;
+    pthread_mutex_unlock(&mutex);
+
+    pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[]) {
     pthread_t *tid; //identificadores das threads no sistema
     t_Args *args;
     int nthreads; //número de threads
+    struct timespec inicio, fim;
+    double temp_exec, media;
+    FILE *f;
 
     //le e avalia os parametros de entrada
     if(argc<3) {
@@ -53,31 +65,56 @@ int main(int argc, char *argv[]) {
     args = (t_Args*) malloc(sizeof(t_Args) * nthreads);
     if(tid==NULL || args==NULL) {puts("ERRO--malloc"); return 2;}
 
-    //inicilaiza o mutex (lock de exclusao mutua)
-    pthread_mutex_init(&mutex, NULL);
+    for(int i=0; i<5; i++) { 
+        count=0;
+        clock_gettime(CLOCK_MONOTONIC, &inicio);
+        //inicilaiza o mutex (lock de exclusao mutua)
+        pthread_mutex_init(&mutex, NULL);
 
-    //cria as threads
-    for(long int i=0; i<nthreads; i++) {
-        args->id = i;
-        args->nthreads = nthreads;
-        if (pthread_create(&tid[i], NULL, Tarefa, (void*) args)) {
-        printf("--ERRO: pthread_create()\n"); exit(-1);
+        //cria as threads
+        for(long int i=0; i<nthreads; i++) {
+            args[i].id = i;
+            args[i].nthreads = nthreads;
+            if (pthread_create(&tid[i], NULL, Tarefa, (void*) &args[i])) {
+                printf("--ERRO: pthread_create()\n");
+                exit(-1);
+            }
         }
+
+        //espera todas as threads terminarem
+        for (int i=0; i<nthreads; i++) {
+            if (pthread_join(tid[i], NULL)) {
+                printf("--ERRO: pthread_join() \n");
+                exit(-1); 
+            } 
+        }
+
+        //finaliza o mutex
+        pthread_mutex_destroy(&mutex);
+        clock_gettime(CLOCK_MONOTONIC, &fim);
+
+        temp_exec = (fim.tv_sec - inicio.tv_sec) + (fim.tv_nsec - inicio.tv_nsec) / 1e9;
+        media += temp_exec;
     }
-
-    //espera todas as threads terminarem
-    for (int i=0; i<nthreads; i++) {
-        if (pthread_join(tid[i], NULL)) {
-            printf("--ERRO: pthread_join() \n");
-            exit(-1); 
-        } 
-    } 
-
-    //finaliza o mutex
-    pthread_mutex_destroy(&mutex);
+    media /= 5;
    
     //printa resultado final
     printf("Número de primos até %lld: %d\n", N, count);
+    printf("Tempo de execução médio(seg): %lf\n", media);
+
+    f = fopen("resultados.txt", "a");
+    if (f == NULL) {
+        printf("ERROR: cannot open file \n");
+        exit(4);
+    }
+
+    fprintf(f, "%lld\n", N);
+    fprintf(f, "%d %.6f\n", nthreads, media);
+
+    fclose(f);
+
+    free(args);
+    free(tid);
 
     return 0;
 }
