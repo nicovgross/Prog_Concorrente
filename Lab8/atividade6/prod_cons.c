@@ -4,11 +4,12 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-sem_t produtor, consumidor;
-pthread_mutex_t mutex;
+sem_t produtor, consumidor; //semáforos
+pthread_mutex_t mutex; //variável de exclusão mútua
 int M, N, C;
-int *seq;
-int prod_pos = 0, cons_pos = 0, count = 0;
+int *seq; //vetor de tamanho M
+int prod_pos = 0, cons_pos = 0; //posição das threads na sequência 
+int count = 0; //número de primos na sequência
 
 int ehPrimo(long long int n) {
     if (n <= 1) return 0;
@@ -42,7 +43,7 @@ void* Produtor(void* arg) {
 
 void* Consumidor(void* arg) {
     int id = *((int*) arg);
-    int *local_count = malloc(sizeof(int));
+    int *local_count = malloc(sizeof(int)); //número de primos local
     *local_count = 0;
 
     while (1) {
@@ -102,16 +103,22 @@ int main(int argc, char* argv[]) {
     }
 
     void *ret;
+    int venc_valor, venc_id;
     for (int i = 0; i < C + 1; i++) {
         pthread_join(tid[i], &ret);
         if (i != 0 && ret != NULL) {
             int *valor = (int*) ret;
+            if(*valor > venc_valor) { 
+                venc_valor = *valor; 
+                venc_id = i; 
+            }
             printf("Consumidor %d encontrou %d primos\n", i, *valor);
             free(valor);
         }
     }
 
     printf("Total de primos: %d\n", count);
+    printf("A thread %d venceu\n", venc_id);
 
     // Libera a memória alocada
     free(seq);
